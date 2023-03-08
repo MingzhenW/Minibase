@@ -7,6 +7,9 @@ import ed.inf.adbs.minibase.base.RelationalAtom;
 import ed.inf.adbs.minibase.base.Head;
 import ed.inf.adbs.minibase.parser.QueryParser;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +46,6 @@ public class CQMinimizer {
         String outputFile = args[1];
 
         minimizeCQ(inputFile, outputFile);
-        // parsingExample(inputFile);
     }
 
     /**
@@ -53,51 +55,37 @@ public class CQMinimizer {
      * but could potentially have constants in its relational atoms.
      *
      */
+
+    //This StringBuilder answer will record the final result of the CQ Minimization
     public static StringBuilder answer = new StringBuilder();
 
     public static void minimizeCQ(String inputFile, String outputFile) {
-        String headName = "";
-        StringBuilder headString = new StringBuilder();
+        CQMinimizer myCQ = new CQMinimizer();
         HashSet<String> headVariables = new HashSet<String>();
         HashMap<String, ArrayList> relationBody = new HashMap<String, ArrayList>();
 
         try {
-            // Query query = QueryParser.parse(Paths.get(filename));
-
             //Another approach to "deep code": Parse twice to
-            // Query query = QueryParser.parse(Paths.get(filename));
-            Query queryOriginal = QueryParser.parse("Q(x) :- R(x, z), T(y, 'ADBS'), R(x, 4)");
-            Query queryCopy =     QueryParser.parse("Q(x) :- R(x, z), T(y, 'ADBS'), R(x, 4)");
+            Query queryOriginal = QueryParser.parse(Paths.get(inputFile));
+            Query queryCopy = QueryParser.parse(Paths.get(inputFile));
 
-            //Store head name and head variable
             Head head = queryOriginal.getHead();
-            headName = head.getName();
-            headString.append(headName);
-            headString.append("(");
-            for (Variable v : head.getVariables()) {
-                headVariables.add(v.getName());
-                headString.append(v.getName());
-                headString.append(", ");
-            }
-            headString.deleteCharAt(headString.length() - 1);
-            headString.deleteCharAt(headString.length() - 1);
-            headString.append(") :- ");
+            myCQ.buildAnswerHead(head, headVariables);
+
             //Store each relation body.
-            List<Atom> temporiginalBody = queryOriginal.getBody();
-            List<Atom> tempcopiedBody = queryCopy.getBody();
+            List<Atom> tempOriginalBody = queryOriginal.getBody();
+            List<Atom> tempCopiedBody = queryCopy.getBody();
             List<RelationalAtom> originalBody = new ArrayList<RelationalAtom>();
             List<RelationalAtom> copiedBody = new ArrayList<RelationalAtom>();
 
-            for(int i = 0; i < temporiginalBody.size(); i++){
-                originalBody.add((RelationalAtom) temporiginalBody.get(i));
-                copiedBody.add((RelationalAtom) tempcopiedBody.get(i));
+            for(int i = 0; i < tempOriginalBody.size(); i++){
+                originalBody.add((RelationalAtom) tempOriginalBody.get(i));
+                copiedBody.add((RelationalAtom) tempCopiedBody.get(i));
             }
 
-            findHomomorphism(originalBody, copiedBody, headVariables);
-            removeDuplicate(copiedBody);            
-            answer.insert(0, headString.toString());
-            
-            System.out.println(answer.toString());
+            myCQ.findHomomorphism(originalBody, copiedBody, headVariables);
+            myCQ.removeDuplicateAndWriteIntoAnswer(copiedBody);            
+            myCQ.writeIntoOutputFile(answer.toString(), outputFile);
         } catch (Exception e) {
             System.err.println("Exception occurred during parsing");
             e.printStackTrace();
@@ -105,27 +93,46 @@ public class CQMinimizer {
     }
 
     /**
-     * 
-     * @param originalAtomsList
-     * @param copiedAtomsList
-     * @param headVariables
+     * write the answer into the output file. Create the file if the file doesn't exist
+     * @param myAnswer Write it in
+     * @param outputFile file path
      */
-    private static void findHomomorphism(List<RelationalAtom> originalAtomsList, List<RelationalAtom> copiedAtomsList, HashSet<String> headVariables){
-        //originalAtomsList is only used to check if copiedAtomsList is the subset of originalAtomsList.
+    private void writeIntoOutputFile(String myAnswer, String outputFile){
+        try{
+            File file = new File(outputFile);
+            if(!file.exists()){
+                file.getParentFile().mkdirs();
+                file.createNewFile();
+            }
+
+            FileOutputStream fos = new FileOutputStream(file);
+            fos.write(myAnswer.getBytes());
+            fos.flush();
+            fos.close();
+
+        } catch(IOException e) {
+            System.out.println("Fail write in :" + myAnswer + " to " + outputFile);
+        }
+    }
+
+    /**
+     * findHomomorphism will find all of the possible mappings between each pair of relation atoms in the query.
+     * Apply all of the correct mapping to the copiedAtomsList.
+     * @param originalAtomsList
+     * @param copiedAtomsList Compare the copiedAtomsList and originalAtomsList to see if copiedAtomsList is the subset of originalAtomsList
+     * @param headVariables All of the head variables
+     */
+    private void findHomomorphism(List<RelationalAtom> originalAtomsList, List<RelationalAtom> copiedAtomsList, HashSet<String> headVariables){
         HashMap<Object, Object> relationMapping = new HashMap<>();
 
-        //loop through each atom
+        //Compare the currentRelationalAtom and all of the rest relational atoms to see if there is any possible mapping
         for (RelationalAtom currentRelationalAtom : copiedAtomsList){
-            //The currentRelationalAtom will not be stored into the restRelationalAtomList
             List<RelationalAtom> restRelationalAtomList = new ArrayList<RelationalAtom>(copiedAtomsList);
             restRelationalAtomList.remove(currentRelationalAtom);
 
-            
+            //Record the possible mapping between the current relational atom and another relational atom in rest list.
             HashMap<Object, Object> tempRelationMapping = new HashMap<>();
 
-
-            //Loop through each element in currentAtomList
-            //This step will find all of possible mapping rule to see if the outer currentAtomList can be mapped to inner c.
             for(RelationalAtom restRelationalAtom : restRelationalAtomList){
                 //Check if currentRelationalAtom can be mapped into restRelationalAtom
                 //First, check if two atoms are in one type.
@@ -134,11 +141,9 @@ public class CQMinimizer {
                 }
 
                 //Now the relation name and the size of terms of currentRelationalAtom and restRelationalAtom are same.
-                //[x, y, 2]
                 List<Term> currentRelationalAtomTermList = currentRelationalAtom.getTerms();
                 List<Term> restRelationalAtomTermList = restRelationalAtom.getTerms();
 
-                //This for loop will loop through the xyz and yxr in R(x,y,x) and R(y,x,r)
                 for(int i = 0; i < currentRelationalAtomTermList.size(); i++){
                     //Distinguished variable cannot be mapped to other variable
                     //Check when both are variable
@@ -192,7 +197,7 @@ public class CQMinimizer {
                     else if(currentRelationalAtomTermList.get(i) instanceof IntegerConstant || currentRelationalAtomTermList.get(i) instanceof StringConstant){
                         break;
                     }
-                    //The last sitution is the left(current term) is a variable. the right(rest term) is a int/string
+                    //The last sitution is the left(currentRelationalAtom) is a variable. the right(restRelationalAtom) is a int/string
                     else{
                         Variable tempCurAtomVar = (Variable) currentRelationalAtomTermList.get(i);
                         //If the left is a head variable. Cannot be mapped
@@ -221,36 +226,52 @@ public class CQMinimizer {
                         }
                     }
                 }
-                //
-                // System.out.println("==========================================");
-                // System.out.println("Current relation: " + currentRelationalAtom);
-                // System.out.println("Target relation: " + restRelationalAtom);
-                // System.out.println("Current mapping: " + tempRelationMapping);
-                if(applyMap(tempRelationMapping, originalAtomsList, copiedAtomsList)){
+
+                //After find the mapping rule between current atom and rest atom. Check if this mapping rule works
+                if(checkMapping(tempRelationMapping, originalAtomsList, copiedAtomsList)){
                     relationMapping.putAll(tempRelationMapping);
-                    //break;
                 }
                 else{
                     tempRelationMapping.clear();
                 }
-                //System.out.println("Current: " + currentRelationalAtom);
             }
-            
-            // System.out.println("==========================================");
-            // System.out.println("Current relation: " + currentRelationalAtom);
-            // System.out.println("Current mapping: " + tempRelationMapping);
-            // if(applyMap(tempRelationMapping, originalAtomsList, copiedAtomsList)){
-            //     relationMapping.putAll(tempRelationMapping);
-            // }
         }
     }
 
-    private static boolean applyMap(HashMap<Object, Object> tempRelationMapping, List<RelationalAtom> originalAtomsList, List<RelationalAtom> copiedAtomsList){        
-        //recorder will record which relation atom has been changed and change from what to what.
-        ArrayList<ArrayList<Object>> recoder = new ArrayList<>();
+    /**
+     * checkMapping will check if the mapping rule works. If it works, apply it to the copiedAtomsList
+     * @param tempRelationMapping Mapping rule
+     * @param originalAtomsList Compare the copiedAtomsList and originalAtomsList to see if copiedAtomsList is the subset of originalAtomsList
+     * @param copiedAtomsList
+     * @return  Return true if the mapping rule works
+     */
+    private boolean checkMapping(HashMap<Object, Object> tempRelationMapping, List<RelationalAtom> originalAtomsList, List<RelationalAtom> copiedAtomsList){
+        //Deep copy copiedAtomsList. Then apply and modify the theOriginalCopiedAtomsList.
+        List<RelationalAtom> theOriginalCopiedAtomsList = new ArrayList<>(); 
+        for(RelationalAtom ra : copiedAtomsList){
+            theOriginalCopiedAtomsList.add(ra.myDeepCopy());
+        }
+        applyMap(theOriginalCopiedAtomsList, tempRelationMapping);
+        
+        //Check if the copy of copiedAtomsList is the subset of the original atoms list.
+        if(isSubset(theOriginalCopiedAtomsList, originalAtomsList)){
+            //If the mapping rule it's valid, apply it to the copiedAtomsList
+            applyMap(copiedAtomsList, tempRelationMapping);
+            return true;
+        }
+        else{
+            return false;
+        }
+    }
+
+    /**
+     * Modify each element in relationatom list based on the mapping rule. After modify, the same relation won't be removed.
+     * @param applyTo relationatom list
+     * @param tempRelationMapping mapping rule such as(x -> y) or (z -> "abc")
+     */
+    private void applyMap(List<RelationalAtom> applyTo, HashMap<Object, Object> tempRelationMapping){
         for(Map.Entry<Object, Object> myEntry : tempRelationMapping.entrySet()){
-            //Loop through copiedAtomsList and apply all of the mapping rules
-            for(RelationalAtom ra : copiedAtomsList){
+            for(RelationalAtom ra : applyTo){
                 //Get the variable list
                 List<Term> copiedAtomsTermList = ra.getTerms();
 
@@ -263,13 +284,6 @@ public class CQMinimizer {
                         //The variable name must be the same.
                         if(tempCurAtomInt.getName().equals(mapFrom.getName())){
                             copiedAtomsTermList.set(i, (Term) myEntry.getValue());
-
-                            ArrayList<Object> tempRecorder = new ArrayList<>();
-                            tempRecorder.add(ra);
-                            tempRecorder.add(i);
-                            tempRecorder.add(mapFrom);
-                            tempRecorder.add((Term) myEntry.getValue());
-                            recoder.add(tempRecorder);
                         }
                         else{
                             continue;
@@ -281,37 +295,13 @@ public class CQMinimizer {
                 }
             }
         }
-        
-        if(isSubset(copiedAtomsList, originalAtomsList)){
-            return true;
-        }
-        else{
-            //System.out.println("================");
-            //System.out.println(recoder);
-            //If it is not sub set. Change every thing back depend on the recorder
-            for(int i = 0; i < recoder.size(); i++){       
-                RelationalAtom tempTargetRelation = (RelationalAtom) recoder.get(i).get(0);
-
-                for(RelationalAtom eachRA : copiedAtomsList){
-                    if(eachRA == tempTargetRelation){
-                        List<Term> tempTermList = eachRA.getTerms();
-                        if(recoder.get(i).get(2) instanceof Variable){
-                            tempTermList.set((int) recoder.get(i).get(1), (Variable) recoder.get(i).get(2));
-                        }
-                        if(recoder.get(i).get(2) instanceof StringConstant){
-                            tempTermList.set((int) recoder.get(i).get(1), (StringConstant) recoder.get(i).get(2));
-                        }
-                        if(recoder.get(i).get(2) instanceof IntegerConstant){
-                            tempTermList.set((int) recoder.get(i).get(1), (IntegerConstant) recoder.get(i).get(2));
-                        }
-                    }
-                }
-            }
-            return false;
-        }
     }
 
-    private static void removeDuplicate(List<RelationalAtom> copiedBody){
+    /**
+     * Remove the same relationatom from the list then write it into the public answer.
+     * @param copiedBody
+     */
+    private void removeDuplicateAndWriteIntoAnswer(List<RelationalAtom> copiedBody){
         HashSet<String> tempSet = new HashSet<>();
 
         for(RelationalAtom ra : copiedBody){
@@ -326,7 +316,12 @@ public class CQMinimizer {
         answer.deleteCharAt(answer.length() - 1);
     }
 
-    private static StringBuilder parseToString(RelationalAtom target){
+    /**
+     * Parse the relationalatom to a string and write the string into the public answer.
+     * @param target
+     * @return
+     */
+    private StringBuilder parseToString(RelationalAtom target){
         StringBuilder partOfString = new StringBuilder();
         partOfString.append(target.getName());
         partOfString.append("(");
@@ -334,39 +329,29 @@ public class CQMinimizer {
         List<Term> tempTermList = target.getTerms();
         int index = 0;
         for(Term t : tempTermList){
-            if(t instanceof Variable || t instanceof IntegerConstant){
-                if(index != 0){
-                    partOfString.append(" ");
-                }
-                index++;
-                partOfString.append(t.toString());
-                partOfString.append(",");
+            if(index != 0){
+                partOfString.append(" ");
             }
-            else{
-                if(index != 0){
-                    partOfString.append(" ");
-                }
-                index++;
-                //partOfString.append("'");
-                partOfString.append(t.toString());
-                //partOfString.append("'");
-                partOfString.append(",");
-            }
+            index++;
+            partOfString.append(t.toString());
+            partOfString.append(",");
         }
         partOfString.deleteCharAt(partOfString.length() - 1);
         partOfString.append("), ");
         return partOfString;
     }
-    //Check if one list is the subset of another list.
-    private static boolean isSubset(List<RelationalAtom> shortList, List<RelationalAtom> longList){
-        //Check if all of the elements in short list appears in long list.
-        //shortList is a list: [R(x,y), S(1, x)]
-        //SL_Item is a RelationalAtom: R(x, y)
-        for(RelationalAtom SLAtom : shortList){
-            //SLAtom and LLAtom is something like R[x, y, 1]
+    
+    /**
+     * Check if all of the elements in short list appears in long list.
+     * @param leftList
+     * @param rightList
+     * @return return the result of if leftlist is the subset of rightlist.
+     */
+    private boolean isSubset(List<RelationalAtom> leftList, List<RelationalAtom> rightList){
+        for(RelationalAtom SLAtom : leftList){
             boolean isSame = false;
 
-            for(RelationalAtom LLAtom : longList){
+            for(RelationalAtom LLAtom : rightList){
                 //If both relation are in the same type.
                 //Then check if both relation has the same elements.
                 if(SLAtom.isRelationNameEqual(LLAtom.getName())){
@@ -379,11 +364,32 @@ public class CQMinimizer {
                     }
                 }
             }
-            //If we didn't find the same element from the long list. Which means that short list is not subset of long list.
+            //If we didn't find the same element from the right list. Which means that left list is not subset of right list.
             if(!isSame){
                 return false;
             }
         }
         return true;
+    }
+
+    /**
+     * Write the head information into the public answer.
+     * @param head
+     * @param headVariables
+     */
+    private void buildAnswerHead(Head head, HashSet<String> headVariables){
+        String headName = head.getName();
+        answer.append(headName);
+        answer.append("(");
+        for (Variable v : head.getVariables()) {
+            headVariables.add(v.getName());
+            answer.append(v.getName());
+            answer.append(", ");
+        }
+        if(headVariables.size() != 0){
+            answer.deleteCharAt(answer.length() - 1);
+            answer.deleteCharAt(answer.length() - 1);
+        }
+        answer.append(") :- ");
     }
 }

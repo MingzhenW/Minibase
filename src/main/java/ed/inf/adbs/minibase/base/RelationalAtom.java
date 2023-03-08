@@ -2,6 +2,7 @@ package ed.inf.adbs.minibase.base;
 
 import ed.inf.adbs.minibase.Utils;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import ed.inf.adbs.minibase.base.Term;
@@ -40,45 +41,17 @@ public class RelationalAtom extends Atom {
         }
     }
 
-    //The parameter is a list of terms.
     //This function will compare if all of the term in this.List is equal to the terms in parameter.
-    //List<Term>: [x, y, 1]
     public boolean isRelationBodyEqual(List<Term> longListBody){
         //If the term has different length.
         if(this.terms.size() != longListBody.size()){
             return false;
         }
         //Now, check if the list of term has the same elements
-        for(int index = 0; index < this.terms.size(); index++ ){
-            //Check if two terms are the same object type (Variable/IntegerConstant/StringConstant)
-            if(((this.terms.get(index) instanceof Variable) && (longListBody.get(index) instanceof Variable)) || ((this.terms.get(index) instanceof IntegerConstant) && (longListBody.get(index) instanceof IntegerConstant)) || ((this.terms.get(index) instanceof StringConstant) && (longListBody.get(index) instanceof StringConstant))){
-                //Once the object type are the same, check if two values are equal
-                if(this.terms.get(index) instanceof Variable){
-                    Variable temp_SL = (Variable) this.terms.get(index);
-                    Variable temp_LL = (Variable) longListBody.get(index);
-                    //If the type are same but the value are different. Return false
-                    if(!temp_SL.getName().equals(temp_LL.getName())){
-                        return false;
-                    }
-                }
-                else if(this.terms.get(index) instanceof IntegerConstant){
-                    IntegerConstant temp_SL = (IntegerConstant) this.terms.get(index);
-                    IntegerConstant temp_LL = (IntegerConstant) longListBody.get(index);
-
-                    if(!temp_SL.getValue().equals(temp_LL.getValue())){
-                        return false;
-                    }
-                }
-                else{
-                    StringConstant temp_SL = (StringConstant) this.terms.get(index);
-                    StringConstant temp_LL = (StringConstant) longListBody.get(index);
-
-                    if(!temp_SL.getValue().equals(temp_LL.getValue())){
-                        return false;
-                    }
-                }
+        for(int index = 0; index < this.terms.size(); index++){
+            if(this.terms.get(index).equals(longListBody.get(index))){
+                continue;
             }
-            //If two terms are not in the same type. Which means these two lists are different.
             else{
                 return false;
             }
@@ -89,5 +62,22 @@ public class RelationalAtom extends Atom {
     @Override
     public String toString() {
         return name + "(" + Utils.join(terms, ", ") + ")";
+    }
+
+    //Deep copy this object and return a new RelationAtom object
+    public RelationalAtom myDeepCopy(){
+        List<Term> myNewDeepListTerm = new ArrayList<>();
+        for(Term t : this.terms){
+            if(t instanceof Variable){
+                myNewDeepListTerm.add(((Variable) t).myDeepCopy());
+            }
+            if(t instanceof StringConstant){
+                myNewDeepListTerm.add(((StringConstant) t).myDeepCopy());
+            }
+            if(t instanceof IntegerConstant){
+                myNewDeepListTerm.add(((IntegerConstant) t).myDeepCopy());
+            }
+        }
+        return new RelationalAtom(this.getName(), myNewDeepListTerm);
     }
 }
